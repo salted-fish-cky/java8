@@ -1055,9 +1055,10 @@ public abstract class AbstractQueuedSynchronizer
         // Ignore if node doesn't exist
         if (node == null)
             return;
-
+        //1. node不再关联到任何线程
         node.thread = null;
 
+        //2. 跳过被cancel的前继node，找到一个有效的前继节点pred
         // Skip cancelled predecessors
         Node pred = node.prev;
         while (pred.waitStatus > 0)
@@ -1068,17 +1069,22 @@ public abstract class AbstractQueuedSynchronizer
         // or signal, so no further action is necessary.
         Node predNext = pred.next;
 
+        //3. 将node的waitStatus置为CANCELLED
         // Can use unconditional write instead of CAS here.
         // After this atomic step, other Nodes can skip past us.
         // Before, we are free of interference from other threads.
         node.waitStatus = Node.CANCELLED;
 
+        //4. 如果node是tail，更新tail为pred，并使pred.next指向null
         // If we are the tail, remove ourselves.
         if (node == tail && compareAndSetTail(node, pred)) {
             compareAndSetNext(pred, predNext, null);
         } else {
             // If successor needs signal, try to set pred's next-link
             // so it will get one. Otherwise wake it up to propagate.
+            //5. 如果node既不是tail，又不是head的后继节点
+            //则将node的前继节点的waitStatus置为SIGNAL
+            //并使node的前继节点指向node的后继节点
             int ws;
             if (pred != head &&
                 ((ws = pred.waitStatus) == Node.SIGNAL ||
@@ -1088,6 +1094,7 @@ public abstract class AbstractQueuedSynchronizer
                 if (next != null && next.waitStatus <= 0)
                     compareAndSetNext(pred, predNext, next);
             } else {
+                //6. 如果node是head的后继节点，则直接唤醒node的后继节点
                 unparkSuccessor(node);
             }
 
