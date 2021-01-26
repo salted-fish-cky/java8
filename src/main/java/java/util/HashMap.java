@@ -751,14 +751,22 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
         static <K,V> TreeNode<K,V> rotateLeft(TreeNode<K,V> root,
                                               TreeNode<K,V> p) {
+            // pp是祖父结点
+            // p是待旋转结点
+            // r是p的右孩子结点
+            // rl是r的左孩子结点
             TreeNode<K,V> r, pp, rl;
             if (p != null && (r = p.right) != null) {
+                // 如果rl不为空，则设置p.right=rl
                 if ((rl = p.right = r.left) != null)
                     rl.parent = p;
+                // 如果祖父结点为null，那么r设置为黑色，r左旋之后即为root节点
                 if ((pp = r.parent = p.parent) == null)
                     (root = r).red = false;
+                    // 如果待旋转结点是左孩子节点
                 else if (pp.left == p)
                     pp.left = r;
+                    // 如果待旋转结点为右孩子
                 else
                     pp.right = r;
                 r.left = p;
@@ -787,26 +795,42 @@ public class HashMap<K,V> extends AbstractMap<K,V>
 
         static <K,V> TreeNode<K,V> balanceInsertion(TreeNode<K,V> root,
                                                     TreeNode<K,V> x) {
+            // 新节点默认为红色
             x.red = true;
+            // xp表示x的父结点，xpp表示x的祖父结点，xppl表示xpp的左孩子结点，xppr表示xpp的右孩子结点
             for (TreeNode<K,V> xp, xpp, xppl, xppr;;) {
+                // 如果x没有父结点，则表示x是第一个结点，自动为根节点，根节点为黑色
                 if ((xp = x.parent) == null) {
                     x.red = false;
                     return x;
                 }
+                // 如果父结点不是红色（就是黑色），或者x没有祖父节点，那么就证明x是第二层节点，父节点为根节点
+                // 这种情况无需就行操作
                 else if (!xp.red || (xpp = xp.parent) == null)
                     return root;
+
+                // 进入到这里，表示x的父节点为红色
+
+                // 如果x的父节点是祖父结点的左孩子
                 if (xp == (xppl = xpp.left)) {
+                    // 祖父结点的右孩子，也就是x的叔叔节点不为空，且为红色
                     if ((xppr = xpp.right) != null && xppr.red) {
+                        // 父节点和叔叔节点都为红色，只需要变色，且将x替换为祖父节点然后进行递归
                         xppr.red = false;
                         xp.red = false;
                         xpp.red = true;
                         x = xpp;
                     }
+                    // 如果叔叔节点为空，或者为黑色
                     else {
+                        // 如果x节点为xp的右孩子
                         if (x == xp.right) {
+                            // 先进行左旋，并且把x替换为xp进行递归，在左旋的过程中产生了新的root节点
                             root = rotateLeft(root, x = xp);
+                            // x替换后，修改xp和xpp
                             xpp = (xp = x.parent) == null ? null : xp.parent;
                         }
+                        // 如果x本来是左孩子，或者已经经过了上面的左旋之后，进行变色加右旋
                         if (xp != null) {
                             xp.red = false;
                             if (xpp != null) {
@@ -816,6 +840,7 @@ public class HashMap<K,V> extends AbstractMap<K,V>
                         }
                     }
                 }
+                // 如果x的父节点是祖父结点的右孩子
                 else {
                     if (xppl != null && xppl.red) {
                         xppl.red = false;
