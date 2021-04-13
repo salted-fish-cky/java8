@@ -147,16 +147,25 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      * heap and each descendant d of n, n <= d.  The element with the
      * lowest value is in queue[0], assuming the queue is nonempty.
      */
+    /**
+     * 队列元素数组。平衡二叉堆实现，父节点下标是n，左节点则是2n+1，右节点是2n+2。最小的元素在最前面，元素通过comparator比较。
+     */
     private transient Object[] queue;
 
     /**
      * The number of elements in the priority queue.
+     */
+    /**
+     * 入队元素个数
      */
     private transient int size;
 
     /**
      * The comparator, or null if priority queue uses elements'
      * natural ordering.
+     */
+    /**
+     * The comparator, or null 表示自然排序
      */
     private transient Comparator<? super E> comparator;
 
@@ -179,6 +188,9 @@ public class PriorityBlockingQueue<E> extends AbstractQueue<E>
      * A plain PriorityQueue used only for serialization,
      * to maintain compatibility with previous versions
      * of this class. Non-null only during serialization/deserialization.
+     */
+    /**
+     * 仅用于序列化和反序列化操作，为了兼容老版本
      */
     private PriorityQueue<E> q;
 
