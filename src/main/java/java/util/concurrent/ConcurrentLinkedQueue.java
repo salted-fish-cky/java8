@@ -248,7 +248,7 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
      *   to not be reachable from head!
      * - tail.next may or may not be self-pointing to tail.
      */
-    //记录尾节点（不一定指向尾，缓更新，非阻塞的，所以没法保证）
+    //尾节点，指向最后一个节点或者倒数第二个节点
     private transient volatile Node<E> tail;
 
     /**
@@ -303,7 +303,11 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
      * Tries to CAS head to p. If successful, repoint old head to itself
      * as sentinel for succ(), below.
      */
+    // 更新头节点的方法
     final void updateHead(Node<E> h, Node<E> p) {
+        // 原子更新h为p成功后，延迟更新h的next为它自己
+        // 这里用延迟更新是安全的，因为head节点已经变了
+        // 只要入队出队的时候检查head有没有变化就行了，跟它的next关系不大
         if (h != p && casHead(h, p))
             h.lazySetNext(h);
     }
@@ -325,58 +329,57 @@ public class ConcurrentLinkedQueue<E> extends AbstractQueue<E>
      * @return {@code true} (as specified by {@link Queue#offer})
      * @throws NullPointerException if the specified element is null
      */
+    // 入队到链表尾
     public boolean offer(E e) {
-        checkNotNull(e);
-        final Node<E> newNode = new Node<E>(e);//新建好一个个节点，并发无影响。
-		/* 局部变量是基本数据类型，则存储在工作内存中（比如虚拟机栈），
-		*  局部变量为引用类型，值传递传的是工作内存中存储的地址，实际的引用对象存储在 堆中
-		  所以p的next发生了改变，tail的next也发生了改变。*/
-        for (Node<E> t = tail, p = t;;) {//跟while(true)效果差不多（程序只有return true一个出口），但是 t和p的作用域更小。而且不用对比，所以性能更高。
+        checkNotNull(e);// 不能添加空元素
+        final Node<E> newNode = new Node<E>(e); // 创建新节点
+        for (Node<E> t = tail, p = t;;) { //定义了两个变量  t，p，自旋
             Node<E> q = p.next;
-            if (q == null) {// 1. q = null表示p为末尾节点
-                if (p.casNext(null, newNode)) {
-                    if (p != t) // hop two nodes at a time
-                        casTail(t, newNode); // Failure is OK.
-                    return true;
+            if (q == null) { // 如果没有next，说明到链表尾部了（tail指向最后一个元素），就入队
+                if (p.casNext(null, newNode)) {//CAS更新p.next为新节点,如果成功了,就返回true,如果不成功就自旋
+                    //如果p不等于t，说明有其它线程先一步更新tail, 也就不会走到q==null这个分支了,p取到的可能是t后面的值
+                    if (p != t)
+                        casTail(t, newNode);  // 把tail原子更新为新节点,失败也ok（指向倒数第二）
+                    return true;// 返回入队成功
                 }
-            } else if (p == q) // 3 . 为什么p会等于q。因为删除节点的时候，会把删除的节点指向自己。
-                //就是当并发高的时候，积累了十多个节点没添加进去，然后删除节点又比较快，当最后一个节点添加前，之前添加的几个节点已经删除了。
-                // 但是当前线程的p可能还是之前取的。对于已经删除的p，已经脱离了链表。所以需要将t直接指向tail，
-                // 从tail处重新开始往下寻找末尾节点。但是当p==t==tail之后，依然p==q,说明tail也已经脱离了链表，则需要从 head处开始找。
-                p = (t != (t = tail)) ? t : head;
-            else// 2. 比如单线程添加第二个元素的时候，tail并非根节点。刚进来 q != null，
-                // 则把 q赋值给p。继续下一次循环 --- 不看第三步。到此就相当于找到末尾节点，添加新节点。
-                // 当 并发较大的时候，可能10个线程卡在 p.casNext(null, newNode),但每次只能通过一个。
-                // 剩下的9个线程都要走 2步，如果没有这个三目运算，直接p赋值为q。最后一个通过的节点，
-                // 要在此循环9次（因为需要一个一个节点往下找，取t的时候到现在增加了几个节点，便要循环几次）。但是有了t != (t = tail))，可以直接找到tail节点，跳过不必要的循环
-                p = (p != t && t != (t = tail)) ? t : q;
+            }
+            else if (p == q)
+                p = (t != (t = tail)) ? t : head;// 如果p的next等于p，说明p已经被删除了（已经出队了）,重新设置p的值
+            else
+                p = (p != t && t != (t = tail)) ? t : q;// t后面还有值，重新设置p的值
         }
     }
 
     public E poll() {
-        //(1) goto标记
         restartFromHead:
-        //（2）无限循环
         for (;;) {
             for (Node<E> h = head, p = h, q;;) {
-                //（3）保存当前节点值
-                E item = p.item;
-                //（4）当前节点有值则cas变为null
-                if (item != null && p.casItem(item, null)) {
-                    //（5）cas成功标志当前节点以及从链表中移除
-                    if (p != h)
+                E item = p.item;// 尝试弹出链表的头节点
+                if (item != null && p.casItem(item, null)) {// 如果节点的值不为空，并且将其更新为null成功了
+                    // 如果头节点变了，则不会走到这个分支
+                    // 会先走下面的分支拿到新的头节点
+                    // 这时候p就不等于h了，就更新头节点
+                    // 在updateHead()中会把head更新为新节点
+                    // 并让head的next指向其自己
+                    if (p != h) // hop two nodes at a time
                         updateHead(h, ((q = p.next) != null) ? q : p);
+                    // 上面的casItem()成功，就可以返回出队的元素了
                     return item;
                 }
-                //（6）当前队列为空则返回null
+                // 下面三个分支说明头节点变了
+                // 且p的item肯定为null
                 else if ((q = p.next) == null) {
+                    // 如果p的next为空，说明队列中没有元素了
+                    // 更新h为p，也就是空元素的节点
                     updateHead(h, p);
+                    // 返回null
                     return null;
                 }
-                //（7）自引用了，则重新找新的队列头节点
                 else if (p == q)
+                    // 如果p等于p的next，说明p已经出队了，重试
                     continue restartFromHead;
-                else//(8）
+                else
+                    // 将p设置为p的next
                     p = q;
             }
         }
